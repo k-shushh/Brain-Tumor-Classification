@@ -1,25 +1,28 @@
 from roboflow import Roboflow
+import os
+import shutil
+import numpy as np
+import matplotlib.pyplot as plt
+import math
+import glob
+import pandas as pd
+import tensorflow as tf
+
+from keras.layers import Conv2D, MaxPool2D, Dropout, Flatten, Dense, BatchNormalization, GlobalAvgPool2D
+from keras.models import Sequential
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+import keras
+
+# === Download dataset ===
 rf = Roboflow(api_key="ncXyX85amkWFvK30pEat")
 project = rf.workspace("ali-rostami").project("labeled-mri-brain-tumor-dataset")
 version = project.version(1)
 dataset = version.download("tensorflow")
 
-import numpy as np
-import matplotlib.pyplot as plt
-import os
-import math
-import shutil
-import glob
-import pandas as pd
-import tensorflow as tf
+# Make sure this path is correct (matches downloaded folder name)
+DATASET_DIR = os.path.join(os.getcwd(), "Labeled-MRI-Brain-Tumor-Dataset-1")
 
-import os
-import shutil
-
-# Dataset directory
-DATASET_DIR = "/content/Labeled-MRI-Brain-Tumor-Dataset-1"
-
-# Mapping prefixes to class names
+# === Class name mapping based on filename prefixes ===
 class_mapping = {
     "Tr-gl_": "Glioma",
     "Tr-me_": "Meningioma",
@@ -31,40 +34,40 @@ class_mapping = {
     "NoTumor": "NoTumor"
 }
 
-# Organizing images into respective classes
+# === Organize images into class folders ===
 for split in ["train", "valid", "test"]:
     split_dir = os.path.join(DATASET_DIR, split)
 
-    # Loop through each file in the current split directory
+    if not os.path.exists(split_dir):
+        print(f" Directory not found: {split_dir}")
+        continue
+
     for img_name in os.listdir(split_dir):
-        # Debugging: print the filename to ensure it's being processed correctly
-        print(f"Processing: {img_name}")
+        img_path = os.path.join(split_dir, img_name)
+        if not os.path.isfile(img_path):
+            continue
 
-        # Check if the item is a file before processing
-        if os.path.isfile(os.path.join(split_dir, img_name)):
-            for key in class_mapping:
-                if img_name.startswith(key):
-                    class_name = class_mapping[key]
-                    break
-                else:
-                    print(f"Warning: No matching class for file: {img_name}")
-                    continue  # This 'continue' skips the current file if class isn't found
+        class_name = None
+        for key in class_mapping:
+            if img_name.startswith(key):
+                class_name = class_mapping[key]
+                break
 
-            # Debugging: print the extracted prefix and class name
-            if class_name:
-                print(f"Found class: {class_name} for file: {img_name}")
-            else:
-                print(f"Warning: No matching class for file: {img_name}")
+        if class_name:
+            class_dir = os.path.join(split_dir, class_name)
+            os.makedirs(class_dir, exist_ok=True)
+            shutil.move(img_path, os.path.join(class_dir, img_name))
+            #print(f"Moved {img_name} -> {class_name}")
 
-            if class_name:  # If a valid class is found
-                class_dir = os.path.join(split_dir, class_name)
-                os.makedirs(class_dir, exist_ok=True)  # Create class folder if it doesn't exist
-                shutil.move(os.path.join(split_dir, img_name), os.path.join(class_dir, img_name))  # Move the image to the appropriate folder
+        #else:
+            #print(f"Warning: No matching class for file: {img_name}")
+
+print("All images have been organized into class folders.")
 
 import shutil
 import os
 
-base_path = "/content/Labeled-MRI-Brain-Tumor-Dataset-1/train"
+base_path = r"C:\Users\Supriya Gupta\Desktop\Labeled-MRI-Brain-Tumor-Dataset-1\train"
 
 # Move Glioma
 src_glioma = os.path.join(base_path, "Pituitary", "Glioma")
@@ -78,18 +81,15 @@ dst_meningioma = os.path.join(base_path, "Meningioma")
 if os.path.exists(src_meningioma):
     shutil.move(src_meningioma, dst_meningioma)
 
-#Model Building
-from keras.layers import Conv2D, MaxPool2D, Dropout, Flatten, Dense, BatchNormalization, GlobalAvgPool2D
-from keras.models import Sequential
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
-import keras
+#Model Build
 
 #CNN Model
 import tensorflow as tf
 
 model = tf.keras.models.Sequential()
 
-model.add(tf.keras.layers.Conv2D(filters = 16 , kernel_size = (3,3), activation = 'relu', input_shape = (224,224,3) ))
+model.add(tf.keras.Input(shape=(224,224,3)))
+model.add(tf.keras.layers.Conv2D(filters = 16 , kernel_size = (3,3), activation = 'relu'))
 
 model.add(tf.keras.layers.Conv2D(filters = 36 , kernel_size = (3,3), activation = 'relu'))
 model.add(tf.keras.layers.MaxPool2D(pool_size = (2,2)))
@@ -111,7 +111,7 @@ model.summary()
 
 model.compile(optimizer='adam', loss = "categorical_crossentropy", metrics = ['accuracy'])
 
-#Preparing data Generator
+#Processing Images
 
 def preprocessingImages1(path):
   """
@@ -124,6 +124,26 @@ def preprocessingImages1(path):
 
   return image
 
+path = r"C:\Users\Supriya Gupta\Desktop\VS CODE\ML 2\Labeled-MRI-Brain-Tumor-Dataset-1\test"
+train_data = preprocessingImages1(path)
+
+def preprocessingImages2(path):
+  """
+  imput : Path
+  output : Pre processed images
+  """
+
+  image_data = ImageDataGenerator(rescale = 1/255)
+  image = image_data.flow_from_directory(directory = path, target_size = (224,224), batch_size = 32, class_mode = 'categorical')
+
+  return image
+
+path = r"C:\Users\Supriya Gupta\Desktop\VS CODE\ML 2\Labeled-MRI-Brain-Tumor-Dataset-1\train"
+test_data = preprocessingImages2(path)
+
+path = r"C:\Users\Supriya Gupta\Desktop\VS CODE\ML 2\Labeled-MRI-Brain-Tumor-Dataset-1\valid"
+val_data = preprocessingImages2(path)
+
 # Early stopping and model check point
 
 from keras.callbacks import ModelCheckpoint, EarlyStopping
@@ -133,11 +153,12 @@ from keras.callbacks import ModelCheckpoint, EarlyStopping
 es = EarlyStopping(monitor="val_accuracy", min_delta = 0.01, patience = 3, verbose = 1, mode = 'auto')
 
 #model check point
-mc = ModelCheckpoint(monitor="val_accuracy",filepath="./bestmodel.h5", verbose = 3, save_best_only = True, mode = 'auto')
+mc = ModelCheckpoint(monitor="val_accuracy",filepath=r"C:\Users\Supriya Gupta\Desktop\VS CODE\ML 2\bestmodel.h5", verbose = 3, save_best_only = True, mode = 'auto')
+
+model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
 
 cd = [es,mc]
 
-#Model Training
 hs = model.fit(train_data,
                 steps_per_epoch = 8,
                 epochs = 30,
@@ -156,42 +177,21 @@ plt.plot(h['accuracy'])
 plt.plot(h['val_accuracy'], c = "red")
 
 plt.title("acc vs val-acc")
-plt.show()
+#plt.show()
 
 plt.plot(h['loss'])
 plt.plot(h['val_loss'], c = "red")
 
 plt.title("loss vs val-loss")
-plt.show()
+#plt.show()
 
 # Model Accuracy
 from keras.models import load_model
 
-model = load_model("/content/bestmodel.h5")
+model = load_model(r"C:\Users\Supriya Gupta\Desktop\VS CODE\ML 2\bestmodel.h5")
 
 model.compile(optimizer='adam', loss = "categorical_crossentropy", metrics = ['accuracy'])
 
 acc = model.evaluate(test_data)[1]
 
 print(f"The accuracy of model is {acc*100} %")
-
-#Test Case
-from tensorflow.keras.utils import load_img, img_to_array
-
-path = "/content/Labeled-MRI-Brain-Tumor-Dataset-1/test/NoTumor/Tr-no_0466_jpg.rf.abeeb51c69ba93bf3e6f6844dd4155df.jpg"
-
-img = load_img(path, target_size = (224,224))
-input_arr = img_to_array(img)/255
-
-input_arr.shape
-
-input_arr = np.expand_dims(input_arr, axis = 0)
-
-pred_probs = model.predict(input_arr)  # Get prediction probabilities
-pred = np.argmax(pred_probs, axis=1)[0]
-
-pred
-
-class_names = ['Glioma', 'Meningioma', 'NoTumor', 'Pituitary']  # Based on train_data.class_indices
-predicted_class = class_names[pred]
-print("Predicted class:", predicted_class)
